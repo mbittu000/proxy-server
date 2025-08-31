@@ -1,43 +1,40 @@
 # Go Proxy Server with Ad Blocking
 
-This project is a **custom HTTP(S) proxy server built in Go**. It forwards requests from clients (such as your phone) to the internet while optionally **blocking popular online ad networks** to reduce ads and improve privacy.
+A simple custom HTTP(S) proxy server built in Go that forwards requests and blocks popular ad networks to reduce ads and improve privacy.
 
 ## Features
 
 - Supports both HTTP and HTTPS proxy tunneling
-- Blocks top 15 popular ad networks by domain
-- Efficient bidirectional TCP data forwarding using `io.Copy`
-- Lightweight and portable
+- Blocks the top 15 popular ad network domains
+- Efficient bidirectional TCP forwarding using `io.Copy`
+- Lightweight and easy to run
 
 ## Getting Started
 
 ### Prerequisites
 
 - Go 1.20+ installed
-- Basic knowledge of Go and networking
 
 ### Running the Server
 
-1. Clone this repository
-2. Build the proxy server:
+1. Build the proxy server:
 ```
 go build -o proxyserver main.go
 ```
-3. Run the server (listens on port 8080 by default):
+2. Run the server (defaults to listening on port 8080):
 ```
 ./proxyserver
 ```
 
-### Configuring Your Phone or Device
+### Configure Your Device
 
-- Connect your phone to the same WiFi network as the computer running the proxy
-- Set the proxy server IP to your computer's local IP (e.g., `192.168.0.101`) and port `8080`
-- On Android or iOS, configure the WiFi proxy settings manually
+- Connect the device to the same network as the proxy server
+- Set the proxy IP to the server IP (e.g., `192.168.0.101`) and port `8080`
+- Configure manual proxy settings on your device's WiFi
 
 ## Ad Blocking
 
-The proxy blocks the following popular ad network domains by default:
-
+This proxy blocks the following ad domains:
 ```
 doubleclick.net
 googlesyndication.com
@@ -56,30 +53,18 @@ infolinks.com
 revenuehits.com
 ```
 
-You can add or remove domains easily by editing the `blockedAds` map in the code.
+You can customize the blocked domains in the code's `blockedAds` map.
 
 ## How It Works
 
-- For HTTP traffic, the proxy transparently forwards requests and responses
-- For HTTPS traffic, the proxy establishes a TCP tunnel using the CONNECT method
-- It uses Go `net.Dial` to connect to destination servers
-- Hijacks the HTTP connection to access raw TCP streams
-- Forwards encrypted data bidirectionally between client and destination
+- HTTP traffic is proxied transparently
+- HTTPS traffic uses a TCP tunnel via the CONNECT method
+- The proxy establishes TCP connections to remote servers using Go's `net.Dial`
+- Proxies bidirectional encrypted data streams without decrypting
 
 ## Limitations
 
-- Does not decrypt HTTPS traffic (no man-in-the-middle)
-- Simple domain matching for ad blocking (can be improved with wildcards/regex)
+- No HTTPS traffic decryption (no man-in-the-middle)
+- Simple domain matching (no wildcards or regex support)
 - No authentication or encryption between client and proxy
 
-## Contributing
-
-Contributions are welcome! Feel free to open issues or submit pull requests.
-
-## License
-
-MIT License
-
----
-
-This project combines networking fundamentals with ad-blocking features, making it ideal for educational and practical solopreneur use cases.
