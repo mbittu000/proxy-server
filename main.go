@@ -4,13 +4,18 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"proxy/domains"
 	"strings"
 )
 
 func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "10000"
+	}
 	server := &http.Server{
-		Addr: "0.0.0.0:8080",
+		Addr: "0.0.0.0:" + port,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodConnect {
 				httpsHandeler(w, r)
