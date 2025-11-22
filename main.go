@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 )
 
 func main() {
@@ -18,8 +17,8 @@ func main() {
 	server := &http.Server{
 		Addr: "0.0.0.0:" + port,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Log every request so you can debug in Render Dashboard
-			log.Printf("Request: %s %s", r.Method, r.Host)
+			// Log requests to help debug
+			log.Printf("[%s] %s %s", r.RemoteAddr, r.Method, r.Host)
 			
 			if r.Method == http.MethodConnect {
 				httpsHandler(w, r)
@@ -36,6 +35,7 @@ func main() {
 }
 
 func httpHandler(w http.ResponseWriter, r *http.Request) {
+	// Clear RequestURI to satisfy Go's http client
 	r.RequestURI = ""
 	if r.URL.Scheme == "" { r.URL.Scheme = "http" }
 	if r.URL.Host == "" { r.URL.Host = r.Host }
@@ -47,6 +47,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
+	// Copy headers
 	for k, v := range resp.Header {
 		for _, vv := range v {
 			w.Header().Add(k, vv)
@@ -57,8 +58,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func httpsHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. Try to connect to the destination FIRST
-	// Standard CONNECT requests normally include the port (e.g. google.com:443)
+	// 1. Dial the destination
 	destConn, err := net.Dial("tcp", r.Host)
 	if err != nil {
 		log.Printf("Failed to dial %s: %v", r.Host, err)
@@ -66,8 +66,7 @@ func httpsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// 2. NOW Hijack the connection.
-	// We do this BEFORE writing 200 OK to ensure we control the raw stream.
+	// 2. Hijack the client connection
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		destConn.Close()
@@ -82,8 +81,7 @@ func httpsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. MANUALLY write the 200 OK to the raw client connection
-	// This is the magic fix for "ERR_TUNNEL_CONNECTION_FAILED"
+	// 3. Send 200 Connection Established to client
 	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 	if err != nil {
 		destConn.Close()
@@ -91,7 +89,7 @@ func httpsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Start the tunnels
+	// 4. Tunnel data
 	go transfer(destConn, clientConn)
 	go transfer(clientConn, destConn)
 }
