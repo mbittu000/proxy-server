@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
@@ -17,25 +18,25 @@ func main() {
 	server := &http.Server{
 		Addr: "0.0.0.0:" + port,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Log requests to help debug
-			log.Printf("[%s] %s %s", r.RemoteAddr, r.Method, r.Host)
-			
+			// LOGGING: This is critical to know if your phone is even connecting!
+			log.Printf("👉 INCOMING: %s %s", r.Method, r.Host)
+
 			if r.Method == http.MethodConnect {
-				httpsHandler(w, r)
+				handleTunnel(w, r)
 			} else {
-				httpHandler(w, r)
+				handleHTTP(w, r)
 			}
 		}),
 	}
 
-	log.Printf("Proxy starting on port %s...", port)
+	log.Printf("✅ Proxy LIVE on port %s. Waiting for connections...", port)
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func httpHandler(w http.ResponseWriter, r *http.Request) {
-	// Clear RequestURI to satisfy Go's http client
+func handleHTTP(w http.ResponseWriter, r *http.Request) {
+	// Standard HTTP handling
 	r.RequestURI = ""
 	if r.URL.Scheme == "" { r.URL.Scheme = "http" }
 	if r.URL.Host == "" { r.URL.Host = r.Host }
@@ -47,7 +48,6 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Copy headers
 	for k, v := range resp.Header {
 		for _, vv := range v {
 			w.Header().Add(k, vv)
@@ -57,31 +57,34 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-func httpsHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. Dial the destination
-	destConn, err := net.Dial("tcp", r.Host)
+func handleTunnel(w http.ResponseWriter, r *http.Request) {
+	// 1. Set a timeout for the connection (prevents hanging)
+	destConn, err := net.DialTimeout("tcp", r.Host, 10*time.Second)
 	if err != nil {
-		log.Printf("Failed to dial %s: %v", r.Host, err)
-		http.Error(w, "Failed to connect: "+err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	
-	// 2. Hijack the client connection
-	hijacker, ok := w.(http.Hijacker)
-	if !ok {
-		destConn.Close()
-		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
-		return
-	}
-	
-	clientConn, _, err := hijacker.Hijack()
-	if err != nil {
-		destConn.Close()
+		log.Printf("❌ FAIL: Could not dial destination %s: %v", r.Host, err)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 
-	// 3. Send 200 Connection Established to client
+	// 2. Hijack the connection
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		destConn.Close()
+		log.Printf("❌ FAIL: Webserver does not support Hijacking")
+		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
+		return
+	}
+
+	clientConn, clientBuffer, err := hijacker.Hijack()
+	if err != nil {
+		destConn.Close()
+		log.Printf("❌ FAIL: Could not hijack connection: %v", err)
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	// 3. Send 200 OK
+	// We simply write to the raw connection.
 	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 	if err != nil {
 		destConn.Close()
@@ -89,13 +92,16 @@ func httpsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Tunnel data
-	go transfer(destConn, clientConn)
-	go transfer(clientConn, destConn)
+	// 4. Start Tunnels
+	// IMPORTANT: We use 'clientBuffer' for reading from client, in case data is stuck there.
+	go transfer(destConn, clientBuffer) // Read from buffer+conn, Write to Dest
+	go transfer(clientConn, destConn)   // Read from Dest, Write to Client
+	
+	log.Printf("🚀 SUCCESS: Tunnel established to %s", r.Host)
 }
 
-func transfer(destination io.WriteCloser, source io.ReadCloser) {
+// Helper to copy data between connections
+func transfer(destination io.WriteCloser, source io.Reader) {
 	defer destination.Close()
-	defer source.Close()
 	io.Copy(destination, source)
 }
